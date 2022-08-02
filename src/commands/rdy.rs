@@ -48,9 +48,9 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
     // 30秒待つ
     // 時間計測で強制的にloopさせてるけど、もっといいやり方あるかも
     loop {
-        if Instant::now().duration_since(start_time).as_secs() > 30
-            || ready_state_operation.answered_all()
-        {
+        let answered_all = ready_state_operation.answered_all();
+
+        if Instant::now().duration_since(start_time).as_secs() > 30 || answered_all {
             break;
         }
 
@@ -69,10 +69,11 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
             .for_each(|x| ready_state_operation.update_is_ready(x.id, Some(false)));
     }
 
-    let ready_member = ready_state_operation.get_ready_member();
-    let not_ready_member = ready_state_operation.get_not_ready_member();
+    let ready_member = ready_state_operation.ready_member_repl();
+    let not_ready_member = ready_state_operation.not_ready_member_repl();
+    let is_everyone_ready = ready_state_operation.is_everyone_ready();
 
-    if ready_state_operation.is_everyone_ready() {
+    if is_everyone_ready {
         msg.channel_id
             .send_message(&ctx.http, |m| {
                 m.embed(|e| {
@@ -93,11 +94,7 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
                 m.embed(|e| {
                     e.colour(0xED4245)
                         .title("Ready Check complete.\nSomeone is Not Ready.")
-                        .field(
-                            "Ready Member",
-                            format!("{}", noone_response(ready_member)),
-                            false,
-                        )
+                        .field("Ready Member", format!("{}", noone_response(ready_member)), false)
                         .field(
                             "Not Ready Member",
                             format!("{}", noone_response(not_ready_member)),
@@ -141,6 +138,7 @@ impl ReadyState {
     }
 }
 
+#[derive(Debug)]
 struct ReadyStateOperation {
     ready_states: Vec<ReadyState>,
 }
@@ -173,7 +171,7 @@ impl ReadyStateOperation {
         target_member
     }
 
-    fn get_ready_member(&self) -> String {
+    fn ready_member_repl(&self) -> String {
         let mut ready_member = String::new();
 
         ready_member.push_str(
@@ -190,7 +188,7 @@ impl ReadyStateOperation {
         ready_member
     }
 
-    fn get_not_ready_member(&self) -> String {
+    fn not_ready_member_repl(&self) -> String {
         let mut not_ready_member = String::new();
 
         not_ready_member.push_str(
@@ -220,7 +218,7 @@ impl ReadyStateOperation {
         }
     }
 
-    // is_readyのデフォルト値 None が書き換えられているか判定
+    // is_readyのデフォルト値 None ではない場合回答したと判定
     fn answered_all(&mut self) -> bool {
         let mut answered = true;
         self.ready_states.iter().for_each(|x| {
