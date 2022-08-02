@@ -31,10 +31,7 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
                     .title(format!("{} requested a Ready Check.", msg.author.name))
                     .field("Target Member", format!("{}", target_member), false)
                     .description("You have to 30 seconds to answer.")
-                    .footer(|f| {
-                        f.text("⏱ Ready Check @");
-                        f
-                    })
+                    .footer(|f|  f.text("⏱ Ready Check @"))
                     .timestamp(&msg.timestamp)
             })
         })
@@ -71,6 +68,7 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
 
     let ready_member = ready_state_operation.ready_member_repl();
     let not_ready_member = ready_state_operation.not_ready_member_repl();
+    let timeout_member = ready_state_operation.timeout_member_repl();
     let is_everyone_ready = ready_state_operation.is_everyone_ready();
 
     if is_everyone_ready {
@@ -80,10 +78,7 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
                     e.colour(0x00ff00)
                         .title("Ready Check complete.\nAll player are Ready.")
                         .field("Ready Member", format!("{}", ready_member), false)
-                        .footer(|f| {
-                            f.text("⏱ Ready Check @");
-                            f
-                        })
+                        .footer(|f| f.text("⏱ Ready Check @"))
                         .timestamp(&msg.timestamp)
                 })
             })
@@ -93,17 +88,23 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
             .send_message(&ctx.http, |m| {
                 m.embed(|e| {
                     e.colour(0xED4245)
-                        .title("Ready Check complete.\nSomeone is Not Ready.")
-                        .field("Ready Member", format!("{}", noone_response(ready_member)), false)
+                        .title("Ready Check complete.\nSomeone is Not Ready or Timeout.")
+                        .field(
+                            "Ready Member",
+                            format!("{}", noone_response(ready_member)),
+                            false,
+                        )
                         .field(
                             "Not Ready Member",
                             format!("{}", noone_response(not_ready_member)),
                             false,
                         )
-                        .footer(|f| {
-                            f.text("⏱ Ready Check @");
-                            f
-                        })
+                        .field(
+                            "Timeout Member",
+                            format!("{}", noone_response(timeout_member)),
+                            false,
+                        )
+                        .footer(|f| f.text("⏱ Ready Check @"))
                         .timestamp(&msg.timestamp)
                 })
             })
@@ -205,7 +206,24 @@ impl ReadyStateOperation {
         not_ready_member
     }
 
-    fn is_everyone_ready(self) -> bool {
+    fn timeout_member_repl(&self) -> String {
+        let mut timeout_member = String::new();
+
+        timeout_member.push_str(
+            &self
+                .ready_states
+                .to_owned()
+                .into_iter()
+                .filter(|x| x.is_ready == None)
+                .map(|x| x.user_name)
+                .collect::<Vec<String>>()
+                .join("\n"),
+        );
+
+        timeout_member
+    }
+
+    fn is_everyone_ready(&mut self) -> bool {
         let is_everyone_ready: bool = self.ready_states.iter().all(|x| x.is_ready == Some(true));
         is_everyone_ready
     }
@@ -232,7 +250,7 @@ impl ReadyStateOperation {
 
 fn noone_response(value: String) -> String {
     if value.len() < 1 {
-        return "no one answered".to_string();
+        return "no one here".to_string();
     } else {
         return value;
     }
