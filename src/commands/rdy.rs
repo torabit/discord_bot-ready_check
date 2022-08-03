@@ -21,30 +21,15 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
 
     let mut ready_state_operation = ReadyStateOperation::new(guild, channel_id);
     let target_member = ready_state_operation.get_target_member();
-
-    // embedを作成
     // このメッセージのリアクションからready checkの判定をかける
-    let embed_message = msg
+    let start_message = msg
         .channel_id
-        .send_message(&ctx.http, |m| {
-            m.embed(|e| {
-                e.colour(0x3498DB)
-                    .set_author(msg.author.create_author())
-                    .title(format!("{} requested a Ready Check.", msg.author.name))
-                    .field("Target Member", format!("{}", target_member), false)
-                    .description("You have to 30 seconds to answer.")
-                    .footer(|f| {
-                        f.text("⏱ Ready Check @");
-                        f
-                    })
-                    .timestamp(&msg.timestamp)
-            })
-        })
+        .send_message(&ctx.http, |m| m.set_embed(msg.create_start_embed(target_member)))
         .await?;
-
     //　reactの初期化をする
-    embed_message.react(&ctx.http, READY).await?;
-    embed_message.react(&ctx.http, NOT_READY).await?;
+    start_message.react(&ctx.http, READY).await?;
+    start_message.react(&ctx.http, NOT_READY).await?;
+
     let start_time = Instant::now();
     // 30秒待つ
     // 時間計測で強制的にloopさせてるけど、もっといいやり方あるかも
@@ -55,68 +40,35 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
             break;
         }
 
-        embed_message
+        start_message
             .reaction_users(&ctx.http, READY, Some(50u8), UserId(0))
             .await?
-            .to_owned()
             .into_iter()
             .for_each(|x| ready_state_operation.update_is_ready(x.id, Some(true)));
 
-        embed_message
+        start_message
             .reaction_users(&ctx.http, NOT_READY, Some(50u8), UserId(0))
             .await?
-            .to_owned()
             .into_iter()
             .for_each(|x| ready_state_operation.update_is_ready(x.id, Some(false)));
     }
 
-    let ready_member = ready_state_operation.ready_member_repl();
-    let not_ready_member = ready_state_operation.not_ready_member_repl();
-    let timeout_member = ready_state_operation.timeout_member_repl();
-    let is_everyone_ready = ready_state_operation.is_everyone_ready();
+    let member_list = MemberList {
+        ready_member: ready_state_operation.ready_member_repl(),
+        not_ready_member: ready_state_operation.not_ready_member_repl(),
+        timed_out_member: ready_state_operation.timed_out_member_repl(),
+    };
 
-    if is_everyone_ready {
+    if ready_state_operation.is_everyone_ready() {
         msg.channel_id
             .send_message(&ctx.http, |m| {
-                m.embed(|e| {
-                    e.colour(0x2ecc71)
-                        .title("Ready Check complete.\nAll player are Ready.")
-                        .field("Ready Member", format!("{}", ready_member), false)
-                        .footer(|f| {
-                            f.text("⏱ Ready Check @");
-                            f
-                        })
-                        .timestamp(&msg.timestamp)
-                })
+                m.set_embed(msg.create_successed_embed(member_list.ready_member))
             })
             .await?;
     } else {
         msg.channel_id
             .send_message(&ctx.http, |m| {
-                m.embed(|e| {
-                    e.colour(0xED4245)
-                        .title("Ready Check complete.\nSomeone is Not Ready or Timeout.")
-                        .field(
-                            "Ready Member",
-                            format!("{}", noone_response(ready_member)),
-                            false,
-                        )
-                        .field(
-                            "Not Ready Member",
-                            format!("{}", noone_response(not_ready_member)),
-                            false,
-                        )
-                        .field(
-                            "Timeout Member",
-                            format!("{}", noone_response(timeout_member)),
-                            false,
-                        )
-                        .footer(|f| {
-                            f.text("⏱ Ready Check @");
-                            f
-                        })
-                        .timestamp(&msg.timestamp)
-                })
+                m.set_embed(msg.create_failure_embed(member_list))
             })
             .await?;
     }
@@ -216,10 +168,10 @@ impl ReadyStateOperation {
         not_ready_member
     }
 
-    fn timeout_member_repl(&self) -> String {
-        let mut timeout_member = String::new();
+    fn timed_out_member_repl(&self) -> String {
+        let mut timed_out_member = String::new();
 
-        timeout_member.push_str(
+        timed_out_member.push_str(
             &self
                 .ready_states
                 .to_owned()
@@ -230,7 +182,7 @@ impl ReadyStateOperation {
                 .join("\n"),
         );
 
-        timeout_member
+        timed_out_member
     }
 
     fn is_everyone_ready(&mut self) -> bool {
@@ -255,14 +207,6 @@ impl ReadyStateOperation {
             }
         });
         answered
-    }
-}
-
-fn noone_response(value: String) -> String {
-    if value.len() < 1 {
-        return "no one here".to_string();
-    } else {
-        return value;
     }
 }
 
@@ -297,4 +241,85 @@ impl UserExt for User {
     }
 }
 
+pub struct MemberList {
+    ready_member: String,
+    not_ready_member: String,
+    timed_out_member: String,
+}
+
+pub trait MessageExt {
+    fn create_start_embed(&self, member: String) -> CreateEmbed;
+    fn create_successed_embed(&self, member: String) -> CreateEmbed;
+    fn create_failure_embed(&self, member_list: MemberList) -> CreateEmbed;
+}
+
+impl MessageExt for Message {
+    fn create_start_embed(&self, member: String) -> CreateEmbed {
+        let mut start_embed = CreateEmbed::default();
+        let author = &self.author;
+
+        start_embed
+            .colour(0x3498DB)
+            .set_author(author.create_author())
+            .title(format!("{} requested a Ready Check.", author.name))
+            .field("Target Member", format!("{}", member), false)
+            .description("You have to 30 seconds to answer.")
+            .set_footer(author.create_footer())
+            .timestamp(&self.timestamp);
+
+        start_embed
+    }
+
+    fn create_successed_embed(&self, member: String) -> CreateEmbed {
+        let mut successed_embed = CreateEmbed::default();
+        let author = &self.author;
+
+        successed_embed
+            .colour(0x3498DB)
+            .set_author(author.create_author())
+            .title("Ready Check complete.\nAll player are Ready.")
+            .field("Ready Member", format!("{}", member), false)
+            .set_footer(author.create_footer())
+            .timestamp(&self.timestamp);
+
+        successed_embed
+    }
+
+    fn create_failure_embed(&self, member_list: MemberList) -> CreateEmbed {
+        let mut failure_embed = CreateEmbed::default();
+        let author = &self.author;
+
+        failure_embed
+            .colour(0xED4245)
+            .set_author(author.create_author())
+            .title("Ready Check complete.\nSomeone is Not Ready or Timed out.")
+            .set_footer(author.create_footer())
+            .timestamp(&self.timestamp);
+
+        if member_list.ready_member.len() > 1 {
+            failure_embed.field(
+                "Ready Member",
+                format!("{}", member_list.ready_member),
+                false,
+            );
+        }
+
+        if member_list.not_ready_member.len() > 1 {
+            failure_embed.field(
+                "Not Ready Member",
+                format!("{}", member_list.not_ready_member),
+                false,
+            );
+        }
+
+        if member_list.timed_out_member.len() > 1 {
+            failure_embed.field(
+                "Timed out Member",
+                format!("{}", member_list.timed_out_member),
+                false,
+            );
+        }
+
+        failure_embed
+    }
 }
