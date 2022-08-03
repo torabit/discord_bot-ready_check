@@ -258,7 +258,7 @@ impl MessageExt for Message {
         let author = &self.author;
 
         successed_embed
-            .colour(0x3498DB)
+            .colour(0x2ECC71)
             .set_author(author.create_author())
             .title("Ready Check complete.\nAll player are Ready.")
             .field("Ready Member", format!("{}", member), false)
