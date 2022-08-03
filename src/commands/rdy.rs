@@ -75,7 +75,7 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
         msg.channel_id
             .send_message(&ctx.http, |m| {
                 m.embed(|e| {
-                    e.colour(0x00ff00)
+                    e.colour(0x2ecc71)
                         .title("Ready Check complete.\nAll player are Ready.")
                         .field("Ready Member", format!("{}", ready_member), false)
                         .footer(|f| f.text("⏱ Ready Check @"))
