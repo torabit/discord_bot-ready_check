@@ -4,8 +4,15 @@ use serenity::model::prelude::*;
 use serenity::prelude::*;
 use std::time::Instant;
 
-const READY: char = '✅';
 const NOT_READY: char = '❌';
+const READY: char = '✅';
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+enum ReadyState {
+    NotReady,
+    Ready,
+    TimedOut,
+}
 
 #[command]
 #[description = "READY CHECK"]
@@ -21,8 +28,8 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
         .get(&msg.author.id)
         .and_then(|voice_state| voice_state.channel_id);
 
-    let mut ready_state_operation = ReadyStateOperation::new(guild, channel_id);
-    let target_member = ready_state_operation.get_target_member();
+    let mut ready_state_operation = MembersReadyStateOperation::new(guild, channel_id);
+    let target_member = ready_state_operation.target_member_repl();
 
     // このメッセージのリアクションからready checkの判定をかける
     let start_message = msg
@@ -49,19 +56,19 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
             .reaction_users(&ctx.http, READY, Some(50u8), UserId(0))
             .await?
             .into_iter()
-            .for_each(|x| ready_state_operation.update_is_ready(x.id, Some(true)));
+            .for_each(|x| ready_state_operation.update_ready_state(x.id, ReadyState::Ready));
 
         start_message
             .reaction_users(&ctx.http, NOT_READY, Some(50u8), UserId(0))
             .await?
             .into_iter()
-            .for_each(|x| ready_state_operation.update_is_ready(x.id, Some(false)));
+            .for_each(|x| ready_state_operation.update_ready_state(x.id, ReadyState::NotReady));
     }
 
     let member_list = MemberList {
-        ready_member: ready_state_operation.ready_member_repl(),
-        not_ready_member: ready_state_operation.not_ready_member_repl(),
-        timed_out_member: ready_state_operation.timed_out_member_repl(),
+        ready_member: ready_state_operation.members_ready_state_repl(ReadyState::Ready),
+        not_ready_member: ready_state_operation.members_ready_state_repl(ReadyState::NotReady),
+        timed_out_member: ready_state_operation.members_ready_state_repl(ReadyState::TimedOut),
     };
 
     if ready_state_operation.is_everyone_ready() {
@@ -82,13 +89,14 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct ReadyState {
-    is_ready: Option<bool>,
+
+struct MembersReadyState {
+    is_ready: ReadyState,
     user_id: UserId,
     user_name: String,
 }
-
-impl ReadyState {
+// 引数にIDと名前だけ取るようにする
+impl MembersReadyState {
     fn new(voice_state: VoiceState) -> Self {
         let user_id = voice_state.user_id;
         let user_name: String = {
@@ -99,7 +107,7 @@ impl ReadyState {
         };
 
         Self {
-            is_ready: None,
+            is_ready: ReadyState::TimedOut,
             user_id,
             user_name,
         }
@@ -107,26 +115,27 @@ impl ReadyState {
 }
 
 #[derive(Debug)]
-struct ReadyStateOperation {
-    ready_states: Vec<ReadyState>,
+
+struct MembersReadyStateOperation {
+    ready_states: Vec<MembersReadyState>,
 }
 
-impl ReadyStateOperation {
+impl MembersReadyStateOperation {
     fn new(guild: Guild, channel_id: Option<ChannelId>) -> Self {
         let ready_states = guild
             .voice_states
             .iter()
             .filter(|voice_state| voice_state.1.channel_id == channel_id)
-            .map(|voice_state| ReadyState::new(voice_state.1.to_owned()))
-            .collect::<Vec<ReadyState>>();
+            .map(|voice_state| MembersReadyState::new(voice_state.1.to_owned()))
+            .collect::<Vec<MembersReadyState>>();
 
         Self { ready_states }
     }
 
-    fn get_target_member(&self) -> String {
-        let mut target_member = String::new();
+    fn target_member_repl(&self) -> String {
+        let mut repl = String::new();
 
-        target_member.push_str(
+        repl.push_str(
             &self
                 .ready_states
                 .to_owned()
@@ -136,66 +145,35 @@ impl ReadyStateOperation {
                 .join("\n"),
         );
 
-        target_member
+        repl
     }
 
-    fn ready_member_repl(&self) -> String {
-        let mut ready_member = String::new();
+    fn members_ready_state_repl(&self, ready_state: ReadyState) -> String {
+        let mut repl = String::new();
 
-        ready_member.push_str(
+        repl.push_str(
             &self
                 .ready_states
                 .to_owned()
                 .into_iter()
-                .filter(|x| x.is_ready == Some(true))
+                .filter(|x| x.is_ready == ready_state)
                 .map(|x| x.user_name)
                 .collect::<Vec<String>>()
                 .join("\n"),
         );
 
-        ready_member
-    }
-
-    fn not_ready_member_repl(&self) -> String {
-        let mut not_ready_member = String::new();
-
-        not_ready_member.push_str(
-            &self
-                .ready_states
-                .to_owned()
-                .into_iter()
-                .filter(|x| x.is_ready == Some(false))
-                .map(|x| x.user_name)
-                .collect::<Vec<String>>()
-                .join("\n"),
-        );
-
-        not_ready_member
-    }
-
-    fn timed_out_member_repl(&self) -> String {
-        let mut timed_out_member = String::new();
-
-        timed_out_member.push_str(
-            &self
-                .ready_states
-                .to_owned()
-                .into_iter()
-                .filter(|x| x.is_ready == None)
-                .map(|x| x.user_name)
-                .collect::<Vec<String>>()
-                .join("\n"),
-        );
-
-        timed_out_member
+        repl
     }
 
     fn is_everyone_ready(&mut self) -> bool {
-        let is_everyone_ready: bool = self.ready_states.iter().all(|x| x.is_ready == Some(true));
+        let is_everyone_ready: bool = self
+            .ready_states
+            .iter()
+            .all(|x| x.is_ready == ReadyState::Ready);
         is_everyone_ready
     }
 
-    fn update_is_ready(&mut self, user_id: UserId, is_ready: Option<bool>) {
+    fn update_ready_state(&mut self, user_id: UserId, is_ready: ReadyState) {
         for i in 0..self.ready_states.len() {
             if self.ready_states[i].user_id == user_id {
                 self.ready_states[i].is_ready = is_ready;
@@ -203,11 +181,11 @@ impl ReadyStateOperation {
         }
     }
 
-    // is_readyのデフォルト値 None ではない場合回答したと判定
+    // is_readyのデフォルト値 ReadyState::TimedOut ではない場合回答したと判定
     fn answered_all(&mut self) -> bool {
         let mut answered = true;
         self.ready_states.iter().for_each(|x| {
-            if let None = x.is_ready {
+            if let ReadyState::TimedOut = x.is_ready {
                 answered = false;
             }
         });
