@@ -11,6 +11,7 @@ const NOT_READY: char = '❌';
 #[description = "READY CHECK"]
 async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
     println!("Ready Check start.");
+
     // Loop処理をBreakするのに必要な開始時間
     let start_time = Instant::now();
     let guild = msg.guild(&ctx.cache).await.unwrap();
@@ -22,16 +23,18 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
 
     let mut ready_state_operation = ReadyStateOperation::new(guild, channel_id);
     let target_member = ready_state_operation.get_target_member();
+
     // このメッセージのリアクションからready checkの判定をかける
     let start_message = msg
         .channel_id
         .send_message(&ctx.http, |m| {
-            m.set_embed(msg.create_start_embed(target_member))
+            m.set_embed(msg.create_start_embed(target_member));
+            m.reactions(vec![
+                ReactionType::from(READY),
+                ReactionType::from(NOT_READY),
+            ])
         })
         .await?;
-    //　reactの初期化をする
-    start_message.react(&ctx.http, READY).await?;
-    start_message.react(&ctx.http, NOT_READY).await?;
 
     // 30秒待つ
     // 時間計測で強制的にloopさせてるけど、もっといいやり方あるかも
