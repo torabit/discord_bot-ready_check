@@ -1,4 +1,4 @@
-use serenity::builder::{CreateEmbedAuthor};
+use serenity::builder::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter};
 use serenity::framework::standard::{macros::command, CommandResult};
 use serenity::model::prelude::*;
 use serenity::prelude::*;
@@ -268,6 +268,7 @@ fn noone_response(value: String) -> String {
 
 pub trait UserExt {
     fn create_author(&self) -> CreateEmbedAuthor;
+    fn create_footer(&self) -> CreateEmbedFooter;
 }
 
 impl UserExt for User {
@@ -284,5 +285,16 @@ impl UserExt for User {
 
         create_author_embed
     }
+
+    fn create_footer(&self) -> CreateEmbedFooter {
+        let mut create_footer_embed = CreateEmbedFooter::default();
+
+        create_footer_embed
+            .text("Created by @tora_tora_bit")
+            .icon_url("https://avatars.githubusercontent.com/u/82490317?v=4");
+
+        create_footer_embed
+    }
+}
 
 }
