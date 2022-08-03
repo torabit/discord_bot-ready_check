@@ -24,7 +24,9 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
     // このメッセージのリアクションからready checkの判定をかける
     let start_message = msg
         .channel_id
-        .send_message(&ctx.http, |m| m.set_embed(msg.create_start_embed(target_member)))
+        .send_message(&ctx.http, |m| {
+            m.set_embed(msg.create_start_embed(target_member))
+        })
         .await?;
     //　reactの初期化をする
     start_message.react(&ctx.http, READY).await?;
