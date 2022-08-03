@@ -1,3 +1,4 @@
+use serenity::builder::{CreateEmbedAuthor};
 use serenity::framework::standard::{macros::command, CommandResult};
 use serenity::model::prelude::*;
 use serenity::prelude::*;
@@ -28,10 +29,14 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
         .send_message(&ctx.http, |m| {
             m.embed(|e| {
                 e.colour(0x3498DB)
+                    .set_author(msg.author.create_author())
                     .title(format!("{} requested a Ready Check.", msg.author.name))
                     .field("Target Member", format!("{}", target_member), false)
                     .description("You have to 30 seconds to answer.")
-                    .footer(|f|  f.text("⏱ Ready Check @"))
+                    .footer(|f| {
+                        f.text("⏱ Ready Check @");
+                        f
+                    })
                     .timestamp(&msg.timestamp)
             })
         })
@@ -40,7 +45,6 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
     //　reactの初期化をする
     embed_message.react(&ctx.http, READY).await?;
     embed_message.react(&ctx.http, NOT_READY).await?;
-
     let start_time = Instant::now();
     // 30秒待つ
     // 時間計測で強制的にloopさせてるけど、もっといいやり方あるかも
@@ -78,7 +82,10 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
                     e.colour(0x2ecc71)
                         .title("Ready Check complete.\nAll player are Ready.")
                         .field("Ready Member", format!("{}", ready_member), false)
-                        .footer(|f| f.text("⏱ Ready Check @"))
+                        .footer(|f| {
+                            f.text("⏱ Ready Check @");
+                            f
+                        })
                         .timestamp(&msg.timestamp)
                 })
             })
@@ -104,7 +111,10 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
                             format!("{}", noone_response(timeout_member)),
                             false,
                         )
-                        .footer(|f| f.text("⏱ Ready Check @"))
+                        .footer(|f| {
+                            f.text("⏱ Ready Check @");
+                            f
+                        })
                         .timestamp(&msg.timestamp)
                 })
             })
@@ -254,4 +264,25 @@ fn noone_response(value: String) -> String {
     } else {
         return value;
     }
+}
+
+pub trait UserExt {
+    fn create_author(&self) -> CreateEmbedAuthor;
+}
+
+impl UserExt for User {
+    fn create_author(&self) -> CreateEmbedAuthor {
+        let mut create_author_embed = CreateEmbedAuthor::default();
+
+        create_author_embed.name(&self.name);
+
+        if let Some(avatar) = &self.avatar_url() {
+            create_author_embed.icon_url(avatar);
+        } else {
+            create_author_embed.icon_url(&self.default_avatar_url());
+        }
+
+        create_author_embed
+    }
+
 }
