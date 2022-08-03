@@ -11,7 +11,8 @@ const NOT_READY: char = '❌';
 #[description = "READY CHECK"]
 async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
     println!("Ready Check start.");
-
+    // Loop処理をBreakするのに必要な開始時間
+    let start_time = Instant::now();
     let guild = msg.guild(&ctx.cache).await.unwrap();
 
     let channel_id = guild
@@ -32,7 +33,6 @@ async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
     start_message.react(&ctx.http, READY).await?;
     start_message.react(&ctx.http, NOT_READY).await?;
 
-    let start_time = Instant::now();
     // 30秒待つ
     // 時間計測で強制的にloopさせてるけど、もっといいやり方あるかも
     loop {
