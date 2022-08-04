@@ -1,5 +1,5 @@
 use serenity::builder::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter};
-use serenity::framework::standard::{macros::command, CommandResult};
+use serenity::framework::standard::{macros::command, Args, CommandResult};
 use serenity::model::prelude::*;
 use serenity::prelude::*;
 use std::time::Instant;
@@ -16,19 +16,40 @@ enum ReadyState {
 
 #[command]
 #[description = "READY CHECK"]
-async fn rdy(ctx: &Context, msg: &Message) -> CommandResult {
+async fn rdy(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     println!("Ready Check start.");
 
     // Loop処理をBreakするのに必要な開始時間
     let start_time = Instant::now();
     let guild = msg.guild(&ctx.cache).await.unwrap();
-
+    // println!("{:?}", guild.members(*ctx.http,1, 1000) );
     let channel_id = guild
         .voice_states
         .get(&msg.author.id)
         .and_then(|voice_state| voice_state.channel_id);
 
-    let mut ready_state_operation = MembersReadyStateOperation::new(guild, channel_id);
+    let mut members: Vec<Option<Member>> = vec![];
+
+    if args.is_empty() {
+        members = get_members_by_channel_id(&guild, channel_id);
+    } else {
+        let role_name = args.parse::<String>().unwrap();
+        let role = guild.roles.iter().find(|x| x.1.name == role_name);
+        match role {
+            Some(role) => {
+                members = get_members_by_role_id(&guild, role.1.id);
+            }
+            None => {
+                let _ = &msg
+                    .channel_id
+                    .say(&ctx.http, format!("Inappropriate role name."))
+                    .await;
+                println!("Exceptionally terminated.");
+                return Ok(());
+            }
+        }
+    }
+    let mut ready_state_operation = MembersReadyStateOperation::new(members);
     let target_member = ready_state_operation.target_member_repl();
 
     // このメッセージのリアクションからready checkの判定をかける
@@ -97,11 +118,16 @@ struct MembersReadyState {
 }
 // 引数にIDと名前だけ取るようにする
 impl MembersReadyState {
-    fn new(voice_state: VoiceState) -> Self {
-        let user_id = voice_state.user_id;
+    fn new(member: &Option<Member>) -> Self {
+        let user_id: UserId = {
+            match member {
+                Some(member) => member.user.id.to_owned(),
+                None => UserId(0),
+            }
+        };
         let user_name: String = {
-            match voice_state.member {
-                Some(member) => member.user.name,
+            match member {
+                Some(member) => member.user.name.to_owned(),
                 None => "名無し".to_string(),
             }
         };
@@ -121,12 +147,10 @@ struct MembersReadyStateOperation {
 }
 
 impl MembersReadyStateOperation {
-    fn new(guild: Guild, channel_id: Option<ChannelId>) -> Self {
-        let ready_states = guild
-            .voice_states
+    fn new(members: Vec<Option<Member>>) -> Self {
+        let ready_states = members
             .iter()
-            .filter(|voice_state| voice_state.1.channel_id == channel_id)
-            .map(|voice_state| MembersReadyState::new(voice_state.1.to_owned()))
+            .map(|x| MembersReadyState::new(x))
             .collect::<Vec<MembersReadyState>>();
 
         Self { ready_states }
@@ -305,4 +329,27 @@ impl MessageExt for Message {
 
         failure_embed
     }
+}
+
+fn get_members_by_channel_id(guild: &Guild, channel_id: Option<ChannelId>) -> Vec<Option<Member>> {
+    let members = guild
+        .voice_states
+        .iter()
+        .filter(|voice_state| voice_state.1.channel_id == channel_id)
+        .map(|voice_state| voice_state.1.member.to_owned())
+        .collect::<Vec<Option<Member>>>();
+
+    members
+}
+
+fn get_members_by_role_id(guild: &Guild, role_id: RoleId) -> Vec<Option<Member>> {
+    let mut members = Vec::new();
+
+    for (_, member) in &guild.members {
+        if member.roles.contains(&role_id) {
+            members.push(Some(member.to_owned()));
+        };
+    }
+
+    members
 }
