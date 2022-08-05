@@ -53,6 +53,13 @@ async fn rdy(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
             }
         }
     }
+    
+    // メンバーの配列が空の場合処理を終わらせる
+    if members.is_empty() {
+        let _ = &msg.channel_id.say(&ctx.http, format!("No members.")).await;
+        println!("Exceptionally terminated.");
+        return Ok(());
+    }
 
     let mut ready_state_operation = MembersReadyStateOperation::new(members);
     let target_member = ready_state_operation.target_member_repl();
