@@ -22,33 +22,38 @@ async fn rdy(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     // Loop処理をBreakするのに必要な開始時間
     let start_time = Instant::now();
     let guild = msg.guild(&ctx.cache).await.unwrap();
-    // println!("{:?}", guild.members(*ctx.http,1, 1000) );
     let channel_id = guild
         .voice_states
         .get(&msg.author.id)
         .and_then(|voice_state| voice_state.channel_id);
 
-    let mut members: Vec<Option<Member>> = vec![];
+    let mut members: Vec<Option<Member>> = Vec::new();
 
     if args.is_empty() {
         members = get_members_by_channel_id(&guild, channel_id);
     } else {
-        let role_name = args.parse::<String>().unwrap();
-        let role = guild.roles.iter().find(|x| x.1.name == role_name);
-        match role {
-            Some(role) => {
-                members = get_members_by_role_id(&guild, role.1.id);
+        let first_args = args.parse::<String>().unwrap();
+        let mut role_id_string = "".to_string();
+        for (i, c) in first_args.chars().enumerate() {
+            if i >= 3 && i < first_args.len() - 1 {
+             role_id_string.push(c);
             }
-            None => {
+        }
+        match role_id_string.parse::<u64>() {
+            Ok(role_id) => {
+                members = get_members_by_role_id(&guild, RoleId(role_id));
+            }
+            Err(err) => {
                 let _ = &msg
                     .channel_id
-                    .say(&ctx.http, format!("Inappropriate role name."))
+                    .say(&ctx.http, format!("No such a role name.\n{}", err))
                     .await;
                 println!("Exceptionally terminated.");
                 return Ok(());
             }
         }
     }
+
     let mut ready_state_operation = MembersReadyStateOperation::new(members);
     let target_member = ready_state_operation.target_member_repl();
 
