@@ -36,7 +36,7 @@ async fn rdy(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         let mut role_id_string = "".to_string();
         for (i, c) in first_args.chars().enumerate() {
             if i >= 3 && i < first_args.len() - 1 {
-             role_id_string.push(c);
+                role_id_string.push(c);
             }
         }
         match role_id_string.parse::<u64>() {
@@ -53,7 +53,7 @@ async fn rdy(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
             }
         }
     }
-    
+
     // メンバーの配列が空の場合処理を終わらせる
     if members.is_empty() {
         let _ = &msg.channel_id.say(&ctx.http, format!("No members.")).await;
@@ -117,6 +117,10 @@ async fn rdy(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
             })
             .await?;
     }
+
+    // start message削除
+    let _ = start_message.delete(&ctx.http).await;
+
     println!("Ready Check complete.");
     Ok(())
 }
