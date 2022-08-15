@@ -1,8 +1,11 @@
 use serenity::builder::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter};
+use serenity::collector::ReactionAction;
 use serenity::framework::standard::{macros::command, Args, CommandResult};
+use serenity::futures::StreamExt;
 use serenity::model::prelude::*;
 use serenity::prelude::*;
-use std::time::Instant;
+use std::sync::Arc;
+use std::time::Duration;
 
 const NOT_READY: char = '❌';
 const READY: char = '✅';
@@ -16,26 +19,38 @@ enum ReadyState {
 
 #[command]
 #[description = "READY CHECK"]
-async fn rdy(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+async fn rdy(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     println!("Ready Check start.");
 
-    // Loop処理をBreakするのに必要な開始時間
-    let start_time = Instant::now();
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let channel_id = guild
         .voice_states
         .get(&msg.author.id)
         .and_then(|voice_state| voice_state.channel_id);
 
+    let role_id = args.single::<String>().unwrap_or("".to_string());
+    let limit = args.single::<u64>().unwrap_or(1);
+
     let mut members: Vec<Option<Member>> = Vec::new();
 
-    if args.is_empty() {
+    // もし60分以上の指定があればエラー文
+    if limit >= 60 {
+        let _ = &msg
+            .channel_id
+            .say(
+                &ctx.http,
+                format!("Specified time is too large!\n Please enter less than 60 minutes"),
+            )
+            .await;
+        return Ok(());
+    }
+
+    if role_id.len() == 0 {
         members = get_members_by_channel_id(&guild, channel_id);
     } else {
-        let first_args = args.parse::<String>().unwrap();
         let mut role_id_string = "".to_string();
-        for (i, c) in first_args.chars().enumerate() {
-            if i >= 3 && i < first_args.len() - 1 {
+        for (i, c) in role_id.chars().enumerate() {
+            if i >= 3 && i < role_id.len() - 1 {
                 role_id_string.push(c);
             }
         }
@@ -68,35 +83,44 @@ async fn rdy(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let start_message = msg
         .channel_id
         .send_message(&ctx.http, |m| {
-            m.set_embed(msg.create_start_embed(target_member));
+            m.set_embed(msg.create_start_embed(target_member, limit));
             m.reactions(vec![
                 ReactionType::from(READY),
                 ReactionType::from(NOT_READY),
             ])
         })
         .await?;
+    // TODO:target_memberが全員投票したらtimeoutをbreakさせたい
+    let target_user_ids = ready_state_operation.target_member();
+    let react_collector = start_message
+        .await_reactions(&ctx)
+        .filter(move |r| {
+            if let Some(user_id) = &r.user_id {
+                target_user_ids.contains(user_id)
+            } else {
+                false
+            }
+        })
+        .timeout(Duration::from_secs(60 * limit)) // 引数で何分か選べるようにする
+        .await
+        .collect::<Vec<Arc<ReactionAction>>>()
+        .await;
 
-    // 30秒待つ
-    // 時間計測で強制的にloopさせてるけど、もっといいやり方あるかも
-    loop {
-        let answered_all = ready_state_operation.answered_all();
+    react_collector
+        .iter()
+        .filter(move |x| x.as_inner_ref().emoji.unicode_eq("✅"))
+        .for_each(|x| {
+            ready_state_operation
+                .update_ready_state(x.as_inner_ref().user_id.unwrap(), ReadyState::Ready)
+        });
 
-        if Instant::now().duration_since(start_time).as_secs() > 30 || answered_all {
-            break;
-        }
-
-        start_message
-            .reaction_users(&ctx.http, READY, Some(50u8), UserId(0))
-            .await?
-            .into_iter()
-            .for_each(|x| ready_state_operation.update_ready_state(x.id, ReadyState::Ready));
-
-        start_message
-            .reaction_users(&ctx.http, NOT_READY, Some(50u8), UserId(0))
-            .await?
-            .into_iter()
-            .for_each(|x| ready_state_operation.update_ready_state(x.id, ReadyState::NotReady));
-    }
+    react_collector
+        .iter()
+        .filter(move |x| x.as_inner_ref().emoji.unicode_eq("❌"))
+        .for_each(|x| {
+            ready_state_operation
+                .update_ready_state(x.as_inner_ref().user_id.unwrap(), ReadyState::NotReady)
+        });
 
     let member_list = MemberList {
         ready_member: ready_state_operation.members_ready_state_repl(ReadyState::Ready),
@@ -170,6 +194,17 @@ impl MembersReadyStateOperation {
             .collect::<Vec<MembersReadyState>>();
 
         Self { ready_states }
+    }
+
+    fn target_member(&self) -> Vec<UserId> {
+        let user_ids = &self
+            .ready_states
+            .to_owned()
+            .iter()
+            .map(|x| x.user_id)
+            .collect::<Vec<UserId>>()
+            .to_vec();
+        user_ids.to_vec()
     }
 
     fn target_member_repl(&self) -> String {
@@ -268,22 +303,23 @@ pub struct MemberList {
 }
 
 pub trait MessageExt {
-    fn create_start_embed(&self, member: String) -> CreateEmbed;
+    fn create_start_embed(&self, member: String, limit: u64) -> CreateEmbed;
     fn create_successed_embed(&self, member: String) -> CreateEmbed;
     fn create_failure_embed(&self, member_list: MemberList) -> CreateEmbed;
 }
 
 impl MessageExt for Message {
-    fn create_start_embed(&self, member: String) -> CreateEmbed {
+    fn create_start_embed(&self, member: String, limit: u64) -> CreateEmbed {
         let mut start_embed = CreateEmbed::default();
         let author = &self.author;
 
+        // 現在時間を取得して、引数のlimitの時間を足した時刻を表示させたい
         start_embed
             .colour(0x3498DB)
             .set_author(author.create_author())
             .title(format!("{} requested a Ready Check.", author.name))
             .field("Target Member", format!("{}", member), false)
-            .description("You have to 30 seconds to answer.")
+            .description(format!("You have to {} miniutes to answer.", limit))
             .set_footer(author.create_footer())
             .timestamp(&self.timestamp);
 
