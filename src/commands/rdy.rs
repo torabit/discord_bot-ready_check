@@ -256,10 +256,7 @@ impl UserExt for User {
     fn create_footer(&self) -> CreateEmbedFooter {
         let mut create_footer_embed = CreateEmbedFooter::default();
 
-        create_footer_embed
-            .text("Created by @tora_tora_bit")
-            .icon_url("https://avatars.githubusercontent.com/u/82490317?v=4");
-
+        create_footer_embed.text("⏳Ready Check @");
         create_footer_embed
     }
 }
