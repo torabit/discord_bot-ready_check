@@ -1,6 +1,7 @@
 mod commands;
 mod utils;
 
+use std::env;
 use serenity::async_trait;
 use serenity::client::{bridge::gateway::GatewayIntents, Client};
 use serenity::framework::standard::macros::group;
@@ -9,7 +10,6 @@ use serenity::model::gateway::Ready;
 use serenity::prelude::{Context, EventHandler};
 
 use commands::{help::*, rdy::*};
-use utils::token::Token;
 
 // Handler構造体。取得したいイベントを実装する
 struct Handler;
@@ -33,7 +33,7 @@ struct General;
 #[tokio::main]
 async fn main() {
     // Discord Bot Token を設定
-    let token = Token::get_token("config.json").expect("Err トークンが見つかりません");
+    let token = env::var("DISCORD_TOKEN").expect("Err トークンが見つかりません");
     // コマンド系の設定
     let framework = StandardFramework::new()
         .configure(|c| c.prefix('~').delimiter(' ')) // コマンドプレフィックス
