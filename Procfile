@@ -1,1 +1,1 @@
-worker: cargo run --release
+web: ./target/release/discord_bot-ready_check
