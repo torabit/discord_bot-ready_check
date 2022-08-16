@@ -1,14 +1,9 @@
 use serenity::builder::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter};
-use serenity::collector::ReactionAction;
 use serenity::framework::standard::{macros::command, Args, CommandResult};
 use serenity::futures::StreamExt;
 use serenity::model::prelude::*;
 use serenity::prelude::*;
-use std::sync::Arc;
 use std::time::Duration;
-
-const NOT_READY: char = '❌';
-const READY: char = '✅';
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 enum ReadyState {
@@ -85,30 +80,38 @@ async fn rdy(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         .send_message(&ctx.http, |m| {
             m.set_embed(msg.create_start_embed(target_member, limit));
             m.reactions(vec![
-                ReactionType::from(READY),
-                ReactionType::from(NOT_READY),
+                ReactionType::from('✅'),
+                ReactionType::from('❌'),
             ])
         })
         .await?;
-    // TODO:target_memberが全員投票したらtimeoutをbreakさせたい
-    let _ = start_message
+        
+    let target_member_user_ids = ready_state_operation.target_member_user_ids();
+    let mut collector = start_message
         .await_reactions(&ctx)
         .timeout(Duration::from_secs(60 * limit))
-        .await
-        .collect::<Vec<Arc<ReactionAction>>>()
+        .filter(|r| r.emoji.unicode_eq("✅") || r.emoji.unicode_eq("❌"))
         .await;
 
-    start_message
-        .reaction_users(&ctx.http, READY, Some(50u8), UserId(0))
-        .await?
-        .into_iter()
-        .for_each(|x| ready_state_operation.update_ready_state(x.id, ReadyState::Ready));
-
-    start_message
-        .reaction_users(&ctx.http, NOT_READY, Some(50u8), UserId(0))
-        .await?
-        .into_iter()
-        .for_each(|x| ready_state_operation.update_ready_state(x.id, ReadyState::NotReady));
+    while let Some(r) = collector.next().await {
+        let react = r.as_inner_ref();
+        match react.user_id {
+            Some(user_id) => {
+                if target_member_user_ids.contains(&user_id) {
+                    if react.emoji.unicode_eq("✅") {
+                        ready_state_operation.update_ready_state(user_id, ReadyState::Ready);
+                    }
+                    if react.emoji.unicode_eq("❌") {
+                        ready_state_operation.update_ready_state(user_id, ReadyState::NotReady);
+                    }
+                };
+            }
+            None => {}
+        }
+        if ready_state_operation.answered_all() {
+            break;
+        }
+    }
 
     let member_list = MemberList {
         ready_member: ready_state_operation.members_ready_state_repl(ReadyState::Ready),
@@ -184,7 +187,7 @@ impl MembersReadyStateOperation {
         Self { ready_states }
     }
 
-    fn target_member(&self) -> Vec<UserId> {
+    fn target_member_user_ids(&self) -> Vec<UserId> {
         let user_ids = &self
             .ready_states
             .to_owned()
