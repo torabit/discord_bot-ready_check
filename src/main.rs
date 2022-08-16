@@ -2,10 +2,11 @@ mod commands;
 mod utils;
 
 use serenity::async_trait;
+use serenity::client::{bridge::gateway::GatewayIntents, Client};
 use serenity::framework::standard::macros::group;
 use serenity::framework::StandardFramework;
 use serenity::model::gateway::Ready;
-use serenity::prelude::{Client, Context, EventHandler};
+use serenity::prelude::{Context, EventHandler};
 
 use commands::{help::*, rdy::*};
 use utils::token::Token;
@@ -35,8 +36,7 @@ async fn main() {
     let token = Token::get_token("config.json").expect("Err トークンが見つかりません");
     // コマンド系の設定
     let framework = StandardFramework::new()
-        // |c| c はラムダ式
-        .configure(|c| c.prefix("~")) // コマンドプレフィックス
+        .configure(|c| c.prefix('~').delimiter(' ')) // コマンドプレフィックス
         .help(&MY_HELP) // ヘルプコマンドを追加
         .group(&GENERAL_GROUP); // general を追加するには,GENERAL_GROUP とグループ名をすべて大文字にする
 
@@ -44,6 +44,7 @@ async fn main() {
     let mut client = Client::builder(&token)
         .event_handler(Handler) // 取得するイベント
         .framework(framework) // コマンドを登録
+        .intents(GatewayIntents::all())
         .await
         .expect("Err creating client"); // エラーハンドリング
 
