@@ -34,12 +34,12 @@ async fn rdy(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let mut members: Vec<Option<Member>> = Vec::new();
 
     // もし60分以上の指定があればエラー文
-    if limit >= 60 {
+    if limit > 60 {
         let _ = &msg
             .channel_id
             .say(
                 &ctx.http,
-                format!("Specified time is too large!\n Please enter less than 60 minutes"),
+                format!("Specified time is too large!\nPlease enter less than 60 minutes"),
             )
             .await;
         return Ok(());
@@ -91,36 +91,24 @@ async fn rdy(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         })
         .await?;
     // TODO:target_memberが全員投票したらtimeoutをbreakさせたい
-    let target_user_ids = ready_state_operation.target_member();
-    let react_collector = start_message
+    let _ = start_message
         .await_reactions(&ctx)
-        .filter(move |r| {
-            if let Some(user_id) = &r.user_id {
-                target_user_ids.contains(user_id)
-            } else {
-                false
-            }
-        })
-        .timeout(Duration::from_secs(60 * limit)) // 引数で何分か選べるようにする
+        .timeout(Duration::from_secs(60 * limit))
         .await
         .collect::<Vec<Arc<ReactionAction>>>()
         .await;
 
-    react_collector
-        .iter()
-        .filter(move |x| x.as_inner_ref().emoji.unicode_eq("✅"))
-        .for_each(|x| {
-            ready_state_operation
-                .update_ready_state(x.as_inner_ref().user_id.unwrap(), ReadyState::Ready)
-        });
+    start_message
+        .reaction_users(&ctx.http, READY, Some(50u8), UserId(0))
+        .await?
+        .into_iter()
+        .for_each(|x| ready_state_operation.update_ready_state(x.id, ReadyState::Ready));
 
-    react_collector
-        .iter()
-        .filter(move |x| x.as_inner_ref().emoji.unicode_eq("❌"))
-        .for_each(|x| {
-            ready_state_operation
-                .update_ready_state(x.as_inner_ref().user_id.unwrap(), ReadyState::NotReady)
-        });
+    start_message
+        .reaction_users(&ctx.http, NOT_READY, Some(50u8), UserId(0))
+        .await?
+        .into_iter()
+        .for_each(|x| ready_state_operation.update_ready_state(x.id, ReadyState::NotReady));
 
     let member_list = MemberList {
         ready_member: ready_state_operation.members_ready_state_repl(ReadyState::Ready),
@@ -319,7 +307,7 @@ impl MessageExt for Message {
             .set_author(author.create_author())
             .title(format!("{} requested a Ready Check.", author.name))
             .field("Target Member", format!("{}", member), false)
-            .description(format!("You have to {} miniutes to answer.", limit))
+            .description(format!("You have {} miniutes to react.", limit))
             .set_footer(author.create_footer())
             .timestamp(&self.timestamp);
 
