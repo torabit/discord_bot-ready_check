@@ -1,1 +1,1 @@
-web: ./target/release/discord_bot-ready_check
+worker: ./target/release/discord_bot-ready_check
