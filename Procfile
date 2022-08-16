@@ -1,1 +1,1 @@
-worker: cargo run
+worker: cargo run --release
