@@ -15,6 +15,7 @@ DISCORD_TOKEN=<use your token here> ./target/debug/discord-help-bot
 ```
 ## Ready Checkとは
 Ready Check Botはターゲットメンバーが準備できているかどうかを制限時間内に判定します。
+
 ターゲットの回答に応じた結果がDiscordにembedとして出力されます。
 
 ## 使い方
