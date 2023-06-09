@@ -1,6 +1,13 @@
 # discord_bot-ready_check
 Rust製のDiscord Bot、serenityを利用してます。
 
+# Usage
+### Collecting votes
+![image](https://github.com/torabit/discord_bot-ready_check/assets/82490317/00962d48-9996-4bd8-ab1a-ad1db88ce824)
+### Result votes
+![image](https://github.com/torabit/discord_bot-ready_check/assets/82490317/5941be8d-7681-4630-9407-d42d4949c7c8)
+
+
 Discordの機能であるreactionを利用してVoiceチャンネル内のユーザーがReadyかどうか判定するBotです。
 ```zsh
 # shell
